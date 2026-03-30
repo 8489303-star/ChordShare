@@ -5,6 +5,7 @@ import { collection, query, orderBy, limit, onSnapshot, addDoc, Timestamp, where
 import { Song, SongVersion, UserRating } from './types';
 import { parseChordPro } from './lib/chordpro';
 import { cn } from './lib/utils';
+import { ChordBookLanding } from './components/ChordBookLanding';
 import { 
   Search, 
   Upload, 
@@ -20,7 +21,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Filter,
-  FileJson
+  FileJson,
+  Smartphone,
+  Edit3,
+  Users
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Toaster, toast } from 'sonner';
@@ -216,7 +220,7 @@ const UserManagement = ({ onBack }: { onBack: () => void }) => {
   );
 };
 
-const SongViewer = ({ song, isOpen, onClose, isAdminUser, onDelete }: { song: Song | null; isOpen: boolean; onClose: () => void; isAdminUser: boolean; onDelete: (id: string) => void }) => {
+const SongViewer = ({ song, isOpen, onClose, isAdminUser, onDelete, onAppClick }: { song: Song | null; isOpen: boolean; onClose: () => void; isAdminUser: boolean; onDelete: (id: string) => void; onAppClick: () => void }) => {
   const [activeVersionIndex, setActiveVersionIndex] = useState(0);
   const [userRating, setUserRating] = useState<number | null>(null);
 
@@ -316,7 +320,15 @@ const SongViewer = ({ song, isOpen, onClose, isAdminUser, onDelete }: { song: So
                     </button>
                   )}
                 </div>
-                <div className="text-left">
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={onAppClick}
+                    className="text-xs bg-blue-50 text-blue-600 px-3 py-1.5 rounded-full font-bold hover:bg-blue-100 transition-colors flex items-center gap-1.5"
+                  >
+                    <Smartphone className="w-3.5 h-3.5" />
+                    קח להופעה באפליקציה
+                  </button>
+                  <div className="text-left">
                   <div className="flex gap-1">
                     {[1, 2, 3, 4, 5].map(star => (
                       <button 
@@ -330,6 +342,7 @@ const SongViewer = ({ song, isOpen, onClose, isAdminUser, onDelete }: { song: So
                   </div>
                 </div>
               </div>
+            </div>
 
               <div className="mb-8">
                 <h1 className="text-4xl font-bold text-zinc-900 mb-2">{song.title}</h1>
@@ -560,7 +573,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [view, setView] = useState<'home' | 'library' | 'upload' | 'admin'>('home');
+  const [view, setView] = useState<'home' | 'library' | 'upload' | 'admin' | 'chordbook'>('home');
   const [selectedSongsForExport, setSelectedSongsForExport] = useState<string[]>([]);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [userName, setUserName] = useState<string>('');
@@ -734,6 +747,12 @@ export default function App() {
               >
                 ספרייה
               </button>
+              <button 
+                onClick={() => setView('chordbook')}
+                className={cn("transition-colors", view === 'chordbook' ? "text-zinc-900" : "text-zinc-500 hover:text-zinc-900")}
+              >
+                אפליקציית ChordBook
+              </button>
             </div>
           </div>
 
@@ -831,6 +850,28 @@ export default function App() {
                   עיין בשירים
                 </button>
               </motion.div>
+
+              {/* Gentle App Promotion */}
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.5 }}
+                className="mt-16 p-6 bg-blue-50 rounded-3xl border border-blue-100 inline-flex flex-col sm:flex-row items-center gap-6 max-w-2xl mx-auto"
+              >
+                <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-blue-900/20">
+                  <Smartphone className="w-6 h-6 text-white" />
+                </div>
+                <div className="text-right">
+                  <h4 className="font-bold text-zinc-900">רוצה לקחת את האקורדים לבמה?</h4>
+                  <p className="text-sm text-zinc-500">אפליקציית ChordBook החדשה ל-Windows ו-Android מאפשרת לך לנגן בביטחון עם גלילה אוטומטית ושינוי סולמות.</p>
+                </div>
+                <button 
+                  onClick={() => setView('chordbook')}
+                  className="bg-blue-600 text-white px-6 py-2 rounded-xl text-sm font-bold hover:bg-blue-500 transition-all whitespace-nowrap"
+                >
+                  לפרטים והורדה
+                </button>
+              </motion.div>
             </section>
 
             {/* Latest Songs */}
@@ -867,6 +908,72 @@ export default function App() {
                     </div>
                   </motion.div>
                 ))}
+              </div>
+            </section>
+
+            {/* Why Write Chords Section */}
+            <section className="py-24 border-t border-zinc-100" dir="rtl">
+              <div className="grid md:grid-cols-2 gap-16 items-center">
+                <div>
+                  <h2 className="text-4xl font-black text-zinc-900 mb-6 leading-tight">
+                    למה כדאי <br />
+                    <span className="text-blue-600">לכתוב ולשתף?</span>
+                  </h2>
+                  <div className="space-y-8">
+                    <div className="flex gap-4">
+                      <div className="w-12 h-12 bg-green-50 rounded-2xl flex items-center justify-center shrink-0">
+                        <Edit3 className="w-6 h-6 text-green-600" />
+                      </div>
+                      <div>
+                        <h4 className="text-xl font-bold text-zinc-900 mb-2">למתחילים: ללמוד דרך עשייה</h4>
+                        <p className="text-zinc-500 leading-relaxed">
+                          כתיבת אקורדים לשיר שאתם אוהבים היא הדרך הטובה ביותר להבין את המבנה שלו. 
+                          אל תחששו מטעויות - הקהילה כאן כדי לעזור ולתקן. כל שיר פשוט שאתם מעלים עוזר לנגן אחר בתחילת דרכו.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-4">
+                      <div className="w-12 h-12 bg-purple-50 rounded-2xl flex items-center justify-center shrink-0">
+                        <Users className="w-6 h-6 text-purple-600" />
+                      </div>
+                      <div>
+                        <h4 className="text-xl font-bold text-zinc-900 mb-2">למתקדמים: להוביל את הקהילה</h4>
+                        <p className="text-zinc-500 leading-relaxed">
+                          שתפו את העיבודים המדויקים שלכם, כולל אקורדים מורכבים וטאבים. 
+                          הידע שלכם הוא נכס לקהילה, והוא מאפשר לנגנים אחרים להשתפר ולהגיע לרמות ביצוע גבוהות יותר.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => user ? setView('upload') : handleLogin()}
+                    className="mt-12 bg-zinc-900 text-white px-8 py-4 rounded-2xl font-bold hover:bg-zinc-800 transition-all shadow-xl shadow-zinc-900/20"
+                  >
+                    התחל לכתוב עכשיו
+                  </button>
+                </div>
+                <div className="relative">
+                  <div className="aspect-square bg-zinc-100 rounded-[3rem] rotate-3 absolute inset-0" />
+                  <div className="aspect-square bg-white border border-zinc-200 rounded-[3rem] relative z-10 p-12 flex flex-col justify-center shadow-2xl">
+                    <div className="space-y-4 font-mono text-sm">
+                      <div className="flex gap-2">
+                        <span className="text-blue-600 font-bold">[C]</span>
+                        <span className="text-zinc-400">שלום</span>
+                        <span className="text-blue-600 font-bold">[G]</span>
+                        <span className="text-zinc-400">עולם</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <span className="text-blue-600 font-bold">[Am]</span>
+                        <span className="text-zinc-400">כמה</span>
+                        <span className="text-blue-600 font-bold">[F]</span>
+                        <span className="text-zinc-400">טוב</span>
+                      </div>
+                      <div className="pt-8 border-t border-zinc-100">
+                        <p className="text-zinc-400 font-sans italic">"השיתוף שלכם בונה את ספריית המוזיקה הגדולה בישראל"</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </section>
           </div>
@@ -970,6 +1077,10 @@ export default function App() {
         {view === 'admin' && isAdminUser && (
           <UserManagement onBack={() => setView('library')} />
         )}
+
+        {view === 'chordbook' && (
+          <ChordBookLanding onUploadClick={() => setView('upload')} />
+        )}
       </main>
 
       <SongViewer 
@@ -978,6 +1089,7 @@ export default function App() {
         onClose={() => setIsSidebarOpen(false)} 
         isAdminUser={isAdminUser}
         onDelete={handleDeleteSong}
+        onAppClick={() => { setIsSidebarOpen(false); setView('chordbook'); }}
       />
 
       {isProfileModalOpen && user && (
