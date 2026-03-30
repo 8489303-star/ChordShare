@@ -12,6 +12,7 @@
         "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
         "rating": { "type": "number", "description": "Average rating" },
         "ratingCount": { "type": "number", "description": "Number of ratings" },
+        "visible": { "type": "boolean", "description": "Whether the song is visible to everyone" },
         "versions": {
           "type": "array",
           "items": {
@@ -48,6 +49,20 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["name", "email", "role", "createdAt"]
+    },
+    "ContactMessage": {
+      "title": "ContactMessage",
+      "description": "A message sent through the contact form",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "subject": { "type": "string" },
+        "message": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "userId": { "type": "string", "description": "Optional UID of the sender" }
+      },
+      "required": ["name", "email", "subject", "message", "createdAt"]
     }
   },
   "firestore": {
@@ -62,6 +77,10 @@
     "/users/{userId}": {
       "schema": "User",
       "description": "Collection of users"
+    },
+    "/messages/{messageId}": {
+      "schema": "ContactMessage",
+      "description": "Collection of contact form messages"
     }
   }
 }

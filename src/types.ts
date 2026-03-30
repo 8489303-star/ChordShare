@@ -16,6 +16,16 @@ export interface Song {
   visible: boolean;
 }
 
+export interface ContactMessage {
+  id: string;
+  name: string;
+  email: string;
+  subject: string;
+  message: string;
+  createdAt: any;
+  userId?: string;
+}
+
 export interface UserRating {
   userId: string;
   songId: string;

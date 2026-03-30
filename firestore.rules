@@ -76,5 +76,11 @@ service cloud.firestore {
                         isValidUser(request.resource.data)));
       allow delete: if isAdmin();
     }
+
+    match /messages/{messageId} {
+      allow read: if isAdmin();
+      allow create: if true; // Anyone can send a message
+      allow delete: if isAdmin();
+    }
   }
 }

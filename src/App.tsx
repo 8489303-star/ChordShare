@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { auth, db, googleProvider, OperationType, handleFirestoreError } from './firebase';
 import { signInWithPopup, signOut, onAuthStateChanged, User, updateProfile } from 'firebase/auth';
 import { collection, query, orderBy, limit, onSnapshot, addDoc, Timestamp, where, getDocs, doc, updateDoc, increment, setDoc, getDoc, deleteDoc, writeBatch } from 'firebase/firestore';
-import { Song, SongVersion, UserRating } from './types';
+import { Song, SongVersion, UserRating, ContactMessage } from './types';
 import { parseChordPro } from './lib/chordpro';
 import { cn } from './lib/utils';
 import { ChordBookLanding } from './components/ChordBookLanding';
@@ -26,7 +26,12 @@ import {
   Edit3,
   Users,
   Eye,
-  EyeOff
+  EyeOff,
+  MessageSquare,
+  Mail,
+  Send,
+  CheckCircle,
+  Edit
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Toaster, toast } from 'sonner';
@@ -233,7 +238,7 @@ const UserManagement = ({ onBack }: { onBack: () => void }) => {
   );
 };
 
-const SongViewer = ({ song, isOpen, onClose, isAdminUser, onDelete, onAppClick, onToggleVisibility }: { song: Song | null; isOpen: boolean; onClose: () => void; isAdminUser: boolean; onDelete: (id: string) => void; onAppClick: () => void; onToggleVisibility: (id: string, visible: boolean) => void }) => {
+const SongViewer = ({ song, isOpen, onClose, isAdminUser, onDelete, onAppClick, onToggleVisibility, onEdit }: { song: Song | null; isOpen: boolean; onClose: () => void; isAdminUser: boolean; onDelete: (id: string) => void; onAppClick: () => void; onToggleVisibility: (id: string, visible: boolean) => void; onEdit: (song: Song) => void }) => {
   const [activeVersionIndex, setActiveVersionIndex] = useState(0);
   const [userRating, setUserRating] = useState<number | null>(null);
 
@@ -383,6 +388,13 @@ const SongViewer = ({ song, isOpen, onClose, isAdminUser, onDelete, onAppClick, 
                       {song.visible ? 'הסתר שיר' : 'הצג שיר'}
                     </button>
                     <button
+                      onClick={() => onEdit(song)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all"
+                    >
+                      <Edit className="w-4 h-4" />
+                      ערוך שיר
+                    </button>
+                    <button
                       onClick={() => onDelete(song.id)}
                       className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-red-50 text-red-600 hover:bg-red-100 transition-all"
                     >
@@ -425,6 +437,7 @@ const UploadPage = ({ onBack, onUploadSuccess, userName }: { onBack: () => void;
   const [isManual, setIsManual] = useState(false);
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
+  const [versionName, setVersionName] = useState('רגיל');
   const [content, setContent] = useState('');
   const [isUploading, setIsUploading] = useState(false);
 
@@ -494,7 +507,7 @@ const UploadPage = ({ onBack, onUploadSuccess, userName }: { onBack: () => void;
         createdAt: Timestamp.now(),
         rating: 0,
         ratingCount: 0,
-        versions: [{ name: 'רגיל', content }],
+        versions: [{ name: versionName || 'רגיל', content }],
         visible: true
       });
       toast.success('השיר הועלה בהצלחה!');
@@ -583,6 +596,16 @@ const UploadPage = ({ onBack, onUploadSuccess, userName }: { onBack: () => void;
               </div>
             </div>
             <div>
+              <label className="block text-sm text-zinc-500 mb-1">שם הגרסה</label>
+              <input 
+                type="text" 
+                value={versionName}
+                onChange={e => setVersionName(e.target.value)}
+                className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2 text-zinc-900 focus:ring-2 focus:ring-blue-500 outline-none"
+                placeholder="למשל: רגיל, הופעה חיה, פשוט"
+              />
+            </div>
+            <div>
               <label className="block text-sm text-zinc-500 mb-1">תוכן (ChordPro)</label>
               <textarea 
                 rows={10}
@@ -606,13 +629,283 @@ const UploadPage = ({ onBack, onUploadSuccess, userName }: { onBack: () => void;
   );
 };
 
+const EditPage = ({ song, onBack, onUpdateSuccess }: { song: Song; onBack: () => void; onUpdateSuccess: () => void }) => {
+  const [title, setTitle] = useState(song.title);
+  const [artist, setArtist] = useState(song.artist);
+  const [versions, setVersions] = useState<SongVersion[]>(song.versions);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsUpdating(true);
+    try {
+      await updateDoc(doc(db, 'songs', song.id), {
+        title,
+        artist,
+        versions
+      });
+      toast.success('השיר עודכן בהצלחה');
+      onUpdateSuccess();
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, 'songs');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const updateVersion = (index: number, field: keyof SongVersion, value: string) => {
+    const newVersions = [...versions];
+    newVersions[index] = { ...newVersions[index], [field]: value };
+    setVersions(newVersions);
+  };
+
+  return (
+    <div className="max-w-3xl mx-auto py-12 px-6" dir="rtl">
+      <button onClick={onBack} className="flex items-center gap-2 text-zinc-500 hover:text-zinc-900 mb-8 transition-colors">
+        <ChevronRight className="w-5 h-5" />
+        <span>ביטול</span>
+      </button>
+      <h1 className="text-3xl font-bold text-zinc-900 mb-8">עריכת שיר</h1>
+      <form onSubmit={handleUpdate} className="space-y-6">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm text-zinc-500 mb-1">שם השיר</label>
+            <input 
+              type="text" 
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2 text-zinc-900 focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-zinc-500 mb-1">אמן</label>
+            <input 
+              type="text" 
+              value={artist}
+              onChange={e => setArtist(e.target.value)}
+              className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2 text-zinc-900 focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+          </div>
+        </div>
+        {versions.map((v, idx) => (
+          <div key={idx} className="space-y-4 p-6 bg-zinc-50 rounded-xl border border-zinc-200">
+            <div>
+              <label className="block text-sm text-zinc-500 mb-1">שם הגרסה</label>
+              <input 
+                type="text" 
+                value={v.name}
+                onChange={e => updateVersion(idx, 'name', e.target.value)}
+                className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2 text-zinc-900 focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-zinc-500 mb-1">תוכן (ChordPro)</label>
+              <textarea 
+                rows={10}
+                value={v.content}
+                onChange={e => updateVersion(idx, 'content', e.target.value)}
+                className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2 text-zinc-900 font-mono text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+            </div>
+          </div>
+        ))}
+        <button 
+          type="submit" 
+          disabled={isUpdating}
+          className="w-full bg-zinc-900 hover:bg-zinc-800 text-white font-bold py-3 rounded-xl transition-all disabled:opacity-50"
+        >
+          {isUpdating ? 'מעדכן...' : 'עדכן שיר'}
+        </button>
+      </form>
+    </div>
+  );
+};
+
+const ContactPage = ({ onBack, user }: { onBack: () => void; user: User | null }) => {
+  const [name, setName] = useState(user?.displayName || '');
+  const [email, setEmail] = useState(user?.email || '');
+  const [subject, setSubject] = useState('');
+  const [message, setMessage] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [isSent, setIsSent] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name || !email || !subject || !message) {
+      toast.error('נא למלא את כל השדות');
+      return;
+    }
+    setIsSending(true);
+    try {
+      await addDoc(collection(db, 'messages'), {
+        name,
+        email,
+        subject,
+        message,
+        createdAt: Timestamp.now(),
+        userId: user?.uid || null
+      });
+      setIsSent(true);
+      toast.success('ההודעה נשלחה בהצלחה!');
+    } catch (err) {
+      toast.error('שגיאה בשליחת ההודעה');
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  if (isSent) {
+    return (
+      <div className="max-w-xl mx-auto py-24 px-6 text-center" dir="rtl">
+        <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+          <CheckCircle className="w-10 h-10 text-green-600" />
+        </div>
+        <h1 className="text-3xl font-bold text-zinc-900 mb-4">תודה רבה!</h1>
+        <p className="text-zinc-500 mb-8 text-lg">ההודעה שלך התקבלה בהצלחה. נחזור אליך בהקדם האפשרי.</p>
+        <button onClick={onBack} className="bg-zinc-900 text-white px-8 py-3 rounded-xl font-bold hover:bg-zinc-800 transition-all">
+          חזרה לספרייה
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto py-12 px-6" dir="rtl">
+      <button onClick={onBack} className="flex items-center gap-2 text-zinc-500 hover:text-zinc-900 mb-8 transition-colors">
+        <ChevronRight className="w-5 h-5" />
+        <span>חזרה</span>
+      </button>
+      <h1 className="text-3xl font-bold text-zinc-900 mb-2">צור קשר</h1>
+      <p className="text-zinc-500 mb-8">יש לך שאלה, הצעה או בעיה? נשמח לשמוע ממך.</p>
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm text-zinc-500 mb-1">שם מלא</label>
+            <input 
+              type="text" 
+              value={name}
+              onChange={e => setName(e.target.value)}
+              className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2 text-zinc-900 focus:ring-2 focus:ring-blue-500 outline-none"
+              placeholder="השם שלך"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-zinc-500 mb-1">אימייל</label>
+            <input 
+              type="email" 
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2 text-zinc-900 focus:ring-2 focus:ring-blue-500 outline-none"
+              placeholder="כתובת האימייל שלך"
+            />
+          </div>
+        </div>
+        <div>
+          <label className="block text-sm text-zinc-500 mb-1">נושא</label>
+          <input 
+            type="text" 
+            value={subject}
+            onChange={e => setSubject(e.target.value)}
+            className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2 text-zinc-900 focus:ring-2 focus:ring-blue-500 outline-none"
+            placeholder="מה נושא הפנייה?"
+          />
+        </div>
+        <div>
+          <label className="block text-sm text-zinc-500 mb-1">הודעה</label>
+          <textarea 
+            rows={6}
+            value={message}
+            onChange={e => setMessage(e.target.value)}
+            className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2 text-zinc-900 focus:ring-2 focus:ring-blue-500 outline-none"
+            placeholder="כתוב כאן את ההודעה שלך..."
+          />
+        </div>
+        <button 
+          type="submit" 
+          disabled={isSending}
+          className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+        >
+          {isSending ? 'שולח...' : (
+            <>
+              <Send className="w-5 h-5" />
+              שלח הודעה
+            </>
+          )}
+        </button>
+      </form>
+    </div>
+  );
+};
+
+const AdminMessages = ({ onBack }: { onBack: () => void }) => {
+  const [messages, setMessages] = useState<ContactMessage[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const q = query(collection(db, 'messages'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, (snap) => {
+      setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() } as ContactMessage)));
+      setIsLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('האם למחוק את ההודעה?')) return;
+    try {
+      await deleteDoc(doc(db, 'messages', id));
+      toast.success('ההודעה נמחקה');
+    } catch (err) {
+      toast.error('שגיאה במחיקה');
+    }
+  };
+
+  return (
+    <div className="max-w-5xl mx-auto py-12 px-6" dir="rtl">
+      <button onClick={onBack} className="flex items-center gap-2 text-zinc-500 hover:text-zinc-900 mb-8 transition-colors">
+        <ChevronRight className="w-5 h-5" />
+        <span>חזרה</span>
+      </button>
+      <h1 className="text-3xl font-bold text-zinc-900 mb-8">הודעות צור קשר</h1>
+      
+      {isLoading ? (
+        <div className="py-20 text-center text-zinc-400">טוען הודעות...</div>
+      ) : messages.length === 0 ? (
+        <div className="py-20 text-center text-zinc-400 bg-zinc-50 rounded-3xl border border-zinc-200">אין הודעות חדשות</div>
+      ) : (
+        <div className="space-y-6">
+          {messages.map(msg => (
+            <div key={msg.id} className="bg-white border border-zinc-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h3 className="text-xl font-bold text-zinc-900">{msg.subject}</h3>
+                  <div className="flex items-center gap-4 text-sm text-zinc-500 mt-1">
+                    <span className="flex items-center gap-1"><UserIcon className="w-4 h-4" /> {msg.name}</span>
+                    <span className="flex items-center gap-1"><Mail className="w-4 h-4" /> {msg.email}</span>
+                    <span>{msg.createdAt?.toDate().toLocaleString('he-IL')}</span>
+                  </div>
+                </div>
+                <button onClick={() => handleDelete(msg.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                  <Trash2 className="w-5 h-5" />
+                </button>
+              </div>
+              <p className="text-zinc-700 whitespace-pre-wrap bg-zinc-50 p-4 rounded-xl border border-zinc-100">{msg.message}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [songsMap, setSongsMap] = useState<Record<string, Song[]>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
+  const [editingSong, setEditingSong] = useState<Song | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [view, setView] = useState<'home' | 'library' | 'upload' | 'admin' | 'chordbook'>('home');
+  const [view, setView] = useState<'home' | 'library' | 'upload' | 'admin' | 'chordbook' | 'edit' | 'contact' | 'messages'>('home');
   const [selectedSongsForExport, setSelectedSongsForExport] = useState<string[]>([]);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [userName, setUserName] = useState<string>('');
@@ -835,21 +1128,39 @@ export default function App() {
               >
                 אפליקציית ChordBook
               </button>
+              <button 
+                onClick={() => setView('contact')}
+                className={cn("transition-colors", view === 'contact' ? "text-zinc-900" : "text-zinc-500 hover:text-zinc-900")}
+              >
+                צור קשר
+              </button>
             </div>
           </div>
 
           <div className="flex items-center gap-4">
             {user && isAdminUser && (
-              <button 
-                onClick={() => setView('admin')}
-                className={cn(
-                  "p-2 rounded-lg transition-colors",
-                  view === 'admin' ? "bg-purple-100 text-purple-700" : "text-zinc-500 hover:bg-zinc-100"
-                )}
-                title="ניהול משתמשים"
-              >
-                <UserIcon className="w-5 h-5" />
-              </button>
+              <>
+                <button 
+                  onClick={() => setView('messages')}
+                  className={cn(
+                    "p-2 rounded-lg transition-colors",
+                    view === 'messages' ? "bg-blue-100 text-blue-700" : "text-zinc-500 hover:bg-zinc-100"
+                  )}
+                  title="הודעות צור קשר"
+                >
+                  <Mail className="w-5 h-5" />
+                </button>
+                <button 
+                  onClick={() => setView('admin')}
+                  className={cn(
+                    "p-2 rounded-lg transition-colors",
+                    view === 'admin' ? "bg-purple-100 text-purple-700" : "text-zinc-500 hover:bg-zinc-100"
+                  )}
+                  title="ניהול משתמשים"
+                >
+                  <UserIcon className="w-5 h-5" />
+                </button>
+              </>
             )}
             {user ? (
               <div className="flex items-center gap-4">
@@ -1157,6 +1468,25 @@ export default function App() {
           </div>
         )}
 
+        {view === 'messages' && isAdminUser && (
+          <AdminMessages onBack={() => setView('home')} />
+        )}
+
+        {view === 'contact' && (
+          <ContactPage onBack={() => setView('home')} user={user} />
+        )}
+
+        {view === 'edit' && editingSong && (
+          <EditPage 
+            song={editingSong} 
+            onBack={() => setView('library')} 
+            onUpdateSuccess={() => {
+              setView('library');
+              setEditingSong(null);
+            }} 
+          />
+        )}
+
         {view === 'upload' && (
           <UploadPage 
             onBack={() => setView('library')} 
@@ -1182,6 +1512,11 @@ export default function App() {
         onDelete={handleDeleteSong}
         onAppClick={() => { setIsSidebarOpen(false); setView('chordbook'); }}
         onToggleVisibility={handleToggleVisibility}
+        onEdit={(song) => {
+          setEditingSong(song);
+          setIsSidebarOpen(false);
+          setView('edit');
+        }}
       />
 
       {isProfileModalOpen && user && (
