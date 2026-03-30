@@ -261,6 +261,18 @@ const SongViewer = ({ song, isOpen, onClose, isAdminUser, onDelete }: { song: So
     }
   };
 
+  const handleDownloadJson = () => {
+    if (!song) return;
+    const blob = new Blob([JSON.stringify(song, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${song.title}-${song.artist}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('השיר הורד בהצלחה!');
+  };
+
   if (!song) return null;
 
   return (
@@ -287,6 +299,13 @@ const SongViewer = ({ song, isOpen, onClose, isAdminUser, onDelete }: { song: So
                 <div className="flex gap-2">
                   <button onClick={onClose} className="p-2 hover:bg-zinc-100 rounded-full transition-colors">
                     <X className="w-6 h-6 text-zinc-500" />
+                  </button>
+                  <button 
+                    onClick={handleDownloadJson}
+                    className="p-2 hover:bg-zinc-100 rounded-full transition-colors"
+                    title="הורד JSON"
+                  >
+                    <Download className="w-6 h-6 text-zinc-500" />
                   </button>
                   {isAdminUser && (
                     <button 
@@ -691,7 +710,7 @@ export default function App() {
       
       {/* Navigation */}
       <nav className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-zinc-200 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
+        <div className="max-w-7xl mx-auto flex justify-between items-center" dir="rtl">
           <div className="flex items-center gap-8">
             <div 
               className="text-2xl font-black tracking-tighter text-zinc-900 cursor-pointer flex items-center gap-2"
