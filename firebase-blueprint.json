@@ -1,0 +1,67 @@
+{
+  "entities": {
+    "Song": {
+      "title": "Song",
+      "description": "A song with multiple versions in ChordPro format",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Song title" },
+        "artist": { "type": "string", "description": "Artist name" },
+        "uploaderId": { "type": "string", "description": "UID of the uploader" },
+        "uploaderName": { "type": "string", "description": "Name of the uploader" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
+        "rating": { "type": "number", "description": "Average rating" },
+        "ratingCount": { "type": "number", "description": "Number of ratings" },
+        "versions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "content": { "type": "string" }
+            }
+          }
+        }
+      },
+      "required": ["title", "artist", "uploaderId", "uploaderName", "createdAt", "versions"]
+    },
+    "Rating": {
+      "title": "Rating",
+      "description": "A user's rating for a specific song",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "songId": { "type": "string" },
+        "rating": { "type": "number" }
+      },
+      "required": ["userId", "songId", "rating"]
+    },
+    "User": {
+      "title": "User",
+      "description": "A user of the application",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "isBlocked": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "email", "role", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/songs/{songId}": {
+      "schema": "Song",
+      "description": "Collection of songs"
+    },
+    "/ratings/{ratingId}": {
+      "schema": "Rating",
+      "description": "Collection of user ratings"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Collection of users"
+    }
+  }
+}

@@ -1,0 +1,79 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    function isAdmin() {
+      return isAuthenticated() && 
+        (request.auth.token.email == "markusef@gmail.com" || 
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
+    }
+    function isBlocked() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isBlocked == true;
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidSong(data) {
+      return data.title is string && data.title.size() > 0 && data.title.size() < 100 &&
+             data.artist is string && data.artist.size() > 0 && data.artist.size() < 100 &&
+             data.uploaderId is string && data.uploaderName is string &&
+             data.versions is list && data.versions.size() > 0 && data.versions.size() < 10;
+    }
+
+    function isValidRating(data) {
+      return data.userId == request.auth.uid &&
+             data.songId is string &&
+             data.rating is number && data.rating >= 1 && data.rating <= 5;
+    }
+
+    function isValidUser(data) {
+      return data.name is string && data.name.size() > 0 &&
+             data.email is string && data.email.size() > 0 &&
+             data.role in ['admin', 'user'] &&
+             (!('isBlocked' in data) || data.isBlocked is bool);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    match /songs/{songId} {
+      allow read: if true; // Publicly readable
+      allow create: if isAuthenticated() && !isBlocked() && isValidSong(request.resource.data) && request.resource.data.uploaderId == request.auth.uid;
+      allow update: if isAuthenticated() && !isBlocked() && (isAdmin() || (request.resource.data.uploaderId == resource.data.uploaderId && isValidSong(request.resource.data)));
+      allow delete: if isAdmin();
+    }
+
+    match /ratings/{ratingId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && !isBlocked() && isValidRating(request.resource.data);
+      allow update: if isAuthenticated() && !isBlocked() && isOwner(resource.data.userId) && isValidRating(request.resource.data);
+      allow delete: if isAdmin() || isOwner(resource.data.userId);
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      // Only admins can create/update roles or block status
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) && 
+                      (isOwner(userId) || isAdmin());
+      allow update: if isAuthenticated() && 
+                      (isAdmin() || 
+                       (isOwner(userId) && 
+                        request.resource.data.role == resource.data.role && 
+                        request.resource.data.isBlocked == resource.data.isBlocked &&
+                        isValidUser(request.resource.data)));
+      allow delete: if isAdmin();
+    }
+  }
+}
