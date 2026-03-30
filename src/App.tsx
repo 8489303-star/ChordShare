@@ -748,7 +748,7 @@ const ContactPage = ({ onBack, user }: { onBack: () => void; user: User | null }
       setIsSent(true);
       toast.success('ההודעה נשלחה בהצלחה!');
     } catch (err) {
-      toast.error('שגיאה בשליחת ההודעה');
+      handleFirestoreError(err, OperationType.CREATE, 'messages');
     } finally {
       setIsSending(false);
     }
@@ -843,10 +843,13 @@ const AdminMessages = ({ onBack }: { onBack: () => void }) => {
 
   useEffect(() => {
     const q = query(collection(db, 'messages'), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(q, (snap) => {
-      setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() } as ContactMessage)));
-      setIsLoading(false);
-    });
+    const unsubscribe = onSnapshot(q, 
+      (snap) => {
+        setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() } as ContactMessage)));
+        setIsLoading(false);
+      },
+      (err) => handleFirestoreError(err, OperationType.LIST, 'messages')
+    );
     return () => unsubscribe();
   }, []);
 
@@ -854,9 +857,9 @@ const AdminMessages = ({ onBack }: { onBack: () => void }) => {
     if (!window.confirm('האם למחוק את ההודעה?')) return;
     try {
       await deleteDoc(doc(db, 'messages', id));
-      toast.success('ההודעה נמחקה');
+      toast.success('ההודעה נשלחה');
     } catch (err) {
-      toast.error('שגיאה במחיקה');
+      handleFirestoreError(err, OperationType.DELETE, 'messages');
     }
   };
 
@@ -1061,7 +1064,7 @@ export default function App() {
       const unsubscribe = onSnapshot(userRef, (snap) => {
         if (snap.exists() && snap.data().role === 'admin') {
           setIsAdminUser(true);
-        } else if (user.email === 'markusef@gmail.com') {
+        } else if (user.email === 'markusef@gmail.com' && user.emailVerified) {
           setIsAdminUser(true); // Fallback for default admin
         } else {
           setIsAdminUser(false);
