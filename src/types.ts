@@ -13,6 +13,7 @@ export interface Song {
   rating: number;
   ratingCount: number;
   versions: SongVersion[];
+  visible: boolean;
 }
 
 export interface UserRating {

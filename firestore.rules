@@ -29,7 +29,8 @@ service cloud.firestore {
       return data.title is string && data.title.size() > 0 && data.title.size() < 100 &&
              data.artist is string && data.artist.size() > 0 && data.artist.size() < 100 &&
              data.uploaderId is string && data.uploaderName is string &&
-             data.versions is list && data.versions.size() > 0 && data.versions.size() < 10;
+             data.versions is list && data.versions.size() > 0 && data.versions.size() < 10 &&
+             (!('visible' in data) || data.visible is bool);
     }
 
     function isValidRating(data) {
@@ -49,10 +50,10 @@ service cloud.firestore {
     // Rules
     // ===============================================================
     match /songs/{songId} {
-      allow read: if true; // Publicly readable
+      allow read: if resource.data.visible == true || isAdmin() || isOwner(resource.data.uploaderId);
       allow create: if isAuthenticated() && !isBlocked() && isValidSong(request.resource.data) && request.resource.data.uploaderId == request.auth.uid;
-      allow update: if isAuthenticated() && !isBlocked() && (isAdmin() || (request.resource.data.uploaderId == resource.data.uploaderId && isValidSong(request.resource.data)));
-      allow delete: if isAdmin();
+      allow update: if isAuthenticated() && !isBlocked() && (isAdmin() || (isOwner(resource.data.uploaderId) && isValidSong(request.resource.data)));
+      allow delete: if isAdmin() || isOwner(resource.data.uploaderId);
     }
 
     match /ratings/{ratingId} {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { auth, db, googleProvider, OperationType, handleFirestoreError } from './firebase';
-import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { collection, query, orderBy, limit, onSnapshot, addDoc, Timestamp, where, getDocs, doc, updateDoc, increment, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
+import { signInWithPopup, signOut, onAuthStateChanged, User, updateProfile } from 'firebase/auth';
+import { collection, query, orderBy, limit, onSnapshot, addDoc, Timestamp, where, getDocs, doc, updateDoc, increment, setDoc, getDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { Song, SongVersion, UserRating } from './types';
 import { parseChordPro } from './lib/chordpro';
 import { cn } from './lib/utils';
@@ -24,7 +24,9 @@ import {
   FileJson,
   Smartphone,
   Edit3,
-  Users
+  Users,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Toaster, toast } from 'sonner';
@@ -67,6 +69,17 @@ const ProfileModal = ({ user, onClose }: { user: User, onClose: () => void }) =>
       await updateDoc(doc(db, 'users', user.uid), {
         name: name.trim()
       });
+      await updateProfile(user, { displayName: name.trim() });
+      
+      // Update uploaderName in all user's songs
+      const songsQuery = query(collection(db, 'songs'), where('uploaderId', '==', user.uid));
+      const songsSnap = await getDocs(songsQuery);
+      const batch = writeBatch(db);
+      songsSnap.docs.forEach(songDoc => {
+        batch.update(songDoc.ref, { uploaderName: name.trim() });
+      });
+      await batch.commit();
+
       toast.success('הפרופיל עודכן בהצלחה');
       onClose();
     } catch (err) {
@@ -220,7 +233,7 @@ const UserManagement = ({ onBack }: { onBack: () => void }) => {
   );
 };
 
-const SongViewer = ({ song, isOpen, onClose, isAdminUser, onDelete, onAppClick }: { song: Song | null; isOpen: boolean; onClose: () => void; isAdminUser: boolean; onDelete: (id: string) => void; onAppClick: () => void }) => {
+const SongViewer = ({ song, isOpen, onClose, isAdminUser, onDelete, onAppClick, onToggleVisibility }: { song: Song | null; isOpen: boolean; onClose: () => void; isAdminUser: boolean; onDelete: (id: string) => void; onAppClick: () => void; onToggleVisibility: (id: string, visible: boolean) => void }) => {
   const [activeVersionIndex, setActiveVersionIndex] = useState(0);
   const [userRating, setUserRating] = useState<number | null>(null);
 
@@ -354,6 +367,30 @@ const SongViewer = ({ song, isOpen, onClose, isAdminUser, onDelete, onAppClick }
                   <Star className="w-4 h-4 fill-yellow-500 text-yellow-500" />
                   <span>{song.rating?.toFixed(1) || '0.0'} ({song.ratingCount || 0} דירוגים)</span>
                 </div>
+
+                {(isAdminUser || (auth.currentUser && song.uploaderId === auth.currentUser.uid)) && (
+                  <div className="flex items-center gap-3 mt-6">
+                    <button
+                      onClick={() => onToggleVisibility(song.id, !song.visible)}
+                      className={cn(
+                        "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all",
+                        song.visible 
+                          ? "bg-zinc-100 text-zinc-600 hover:bg-zinc-200" 
+                          : "bg-orange-100 text-orange-700 hover:bg-orange-200"
+                      )}
+                    >
+                      {song.visible ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                      {song.visible ? 'הסתר שיר' : 'הצג שיר'}
+                    </button>
+                    <button
+                      onClick={() => onDelete(song.id)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-red-50 text-red-600 hover:bg-red-100 transition-all"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      מחק שיר
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
@@ -384,7 +421,7 @@ const SongViewer = ({ song, isOpen, onClose, isAdminUser, onDelete, onAppClick }
   );
 };
 
-const UploadPage = ({ onBack, onUploadSuccess }: { onBack: () => void; onUploadSuccess: () => void }) => {
+const UploadPage = ({ onBack, onUploadSuccess, userName }: { onBack: () => void; onUploadSuccess: () => void; userName: string }) => {
   const [isManual, setIsManual] = useState(false);
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
@@ -420,11 +457,12 @@ const UploadPage = ({ onBack, onUploadSuccess }: { onBack: () => void; onUploadS
             title: s.title,
             artist: s.artist,
             uploaderId: auth.currentUser?.uid,
-            uploaderName: auth.currentUser?.displayName || 'אנונימי',
+            uploaderName: userName || auth.currentUser?.displayName || 'אנונימי',
             createdAt: Timestamp.now(),
             rating: 0,
             ratingCount: 0,
-            versions: versions
+            versions: versions,
+            visible: true
           });
         }
         toast.success('השירים הועלו בהצלחה!');
@@ -452,11 +490,12 @@ const UploadPage = ({ onBack, onUploadSuccess }: { onBack: () => void; onUploadS
         title,
         artist,
         uploaderId: auth.currentUser?.uid,
-        uploaderName: auth.currentUser?.displayName || 'אנונימי',
+        uploaderName: userName || auth.currentUser?.displayName || 'אנונימי',
         createdAt: Timestamp.now(),
         rating: 0,
         ratingCount: 0,
-        versions: [{ name: 'רגיל', content }]
+        versions: [{ name: 'רגיל', content }],
+        visible: true
       });
       toast.success('השיר הועלה בהצלחה!');
       onUploadSuccess();
@@ -569,7 +608,7 @@ const UploadPage = ({ onBack, onUploadSuccess }: { onBack: () => void; onUploadS
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [songs, setSongs] = useState<Song[]>([]);
+  const [songsMap, setSongsMap] = useState<Record<string, Song[]>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -577,6 +616,13 @@ export default function App() {
   const [selectedSongsForExport, setSelectedSongsForExport] = useState<string[]>([]);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [userName, setUserName] = useState<string>('');
+  const [isAdminUser, setIsAdminUser] = useState(false);
+
+  const songs = useMemo(() => {
+    const allSongs = Object.values(songsMap).flat() as Song[];
+    const unique = Array.from(new Map(allSongs.map(s => [s.id, s])).values());
+    return unique.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+  }, [songsMap]);
 
   useEffect(() => {
     // Force light mode
@@ -612,13 +658,35 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const q = query(collection(db, 'songs'), orderBy('createdAt', 'desc'), limit(50));
-    const unsubscribe = onSnapshot(q, (snap) => {
-      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Song));
-      setSongs(docs);
-    }, (err) => handleFirestoreError(err, OperationType.LIST, 'songs'));
-    return () => unsubscribe();
-  }, []);
+    const songListeners: (() => void)[] = [];
+    
+    const handleSnap = (snap: any, key: string) => {
+      const docs = snap.docs.map((d: any) => ({ id: d.id, ...d.data() } as Song));
+      setSongsMap(prev => ({ ...prev, [key]: docs }));
+    };
+
+    if (isAdminUser) {
+      const q = query(collection(db, 'songs'), orderBy('createdAt', 'desc'), limit(100));
+      songListeners.push(onSnapshot(q, (snap) => handleSnap(snap, 'all'), (err) => handleFirestoreError(err, OperationType.LIST, 'songs')));
+    } else {
+      const qPublic = query(collection(db, 'songs'), where('visible', '==', true), orderBy('createdAt', 'desc'), limit(100));
+      songListeners.push(onSnapshot(qPublic, (snap) => handleSnap(snap, 'public'), (err) => handleFirestoreError(err, OperationType.LIST, 'songs')));
+      
+      if (user) {
+        const qPrivate = query(collection(db, 'songs'), where('uploaderId', '==', user.uid), where('visible', '==', false));
+        songListeners.push(onSnapshot(qPrivate, (snap) => handleSnap(snap, 'private'), (err) => handleFirestoreError(err, OperationType.LIST, 'songs')));
+      } else {
+        // Clear private songs if logged out
+        setSongsMap(prev => {
+          const next = { ...prev };
+          delete next.private;
+          return next;
+        });
+      }
+    }
+    
+    return () => songListeners.forEach(unsub => unsub());
+  }, [user, isAdminUser]);
 
   const filteredSongs = useMemo(() => {
     return songs.filter(s => 
@@ -674,12 +742,26 @@ export default function App() {
     try {
       await deleteDoc(doc(db, 'songs', id));
       toast.success('השיר נמחק בהצלחה');
+      if (selectedSong?.id === id) {
+        setIsSidebarOpen(false);
+      }
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, 'songs');
     }
   };
 
-  const [isAdminUser, setIsAdminUser] = useState(false);
+  const handleToggleVisibility = async (id: string, visible: boolean) => {
+    try {
+      await updateDoc(doc(db, 'songs', id), { visible });
+      toast.success(visible ? 'השיר גלוי כעת לכולם' : 'השיר הוסתר');
+      if (selectedSong?.id === id) {
+        setSelectedSong(prev => prev ? { ...prev, visible } : null);
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, 'songs');
+    }
+  };
+
   useEffect(() => {
     if (user) {
       const userRef = doc(db, 'users', user.uid);
@@ -884,7 +966,7 @@ export default function App() {
                 <button onClick={() => setView('library')} className="text-blue-500 hover:underline font-medium">צפה בהכל</button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {songs.slice(0, 6).map((song) => (
+                {songs.filter(s => s.visible !== false).slice(0, 6).map((song) => (
                   <motion.div 
                     key={song.id}
                     whileHover={{ y: -4 }}
@@ -1034,7 +1116,15 @@ export default function App() {
                         />
                       </td>
                       <td className="px-6 py-4">
-                        <div className="font-bold text-zinc-900 group-hover:text-blue-600 transition-colors">{song.title}</div>
+                        <div className="flex items-center gap-2">
+                          <div className="font-bold text-zinc-900 group-hover:text-blue-600 transition-colors">{song.title}</div>
+                          {!song.visible && (
+                            <span className="bg-orange-100 text-orange-700 text-[10px] px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                              <EyeOff className="w-3 h-3" />
+                              מוסתר
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-zinc-500">{song.artist}</td>
                       <td className="px-6 py-4 text-zinc-400 text-sm">{song.uploaderName}</td>
@@ -1071,6 +1161,7 @@ export default function App() {
           <UploadPage 
             onBack={() => setView('library')} 
             onUploadSuccess={() => setView('library')} 
+            userName={userName}
           />
         )}
 
@@ -1090,6 +1181,7 @@ export default function App() {
         isAdminUser={isAdminUser}
         onDelete={handleDeleteSong}
         onAppClick={() => { setIsSidebarOpen(false); setView('chordbook'); }}
+        onToggleVisibility={handleToggleVisibility}
       />
 
       {isProfileModalOpen && user && (
