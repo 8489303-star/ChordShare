@@ -14,6 +14,10 @@ export interface Song {
   ratingCount: number;
   versions: SongVersion[];
   visible: boolean;
+  tags?: string[];
+  originalKey?: string;
+  scrollSpeed?: number;
+  versionKeys?: Record<string, string>;
 }
 
 export interface ContactMessage {

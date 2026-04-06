@@ -20,6 +20,8 @@ import {
   LogIn,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Filter,
   FileJson,
   Smartphone,
@@ -263,18 +265,46 @@ const SongViewer = ({ song, isOpen, onClose, isAdminUser, onDelete, onAppClick, 
 
     try {
       const ratingId = `${auth.currentUser.uid}_${song.id}`;
-      await setDoc(doc(db, 'ratings', ratingId), {
-        userId: auth.currentUser.uid,
-        songId: song.id,
-        rating
-      });
-
-      // Update song average rating (simplified logic for demo)
+      const ratingRef = doc(db, 'ratings', ratingId);
+      const ratingSnap = await getDoc(ratingRef);
       const songRef = doc(db, 'songs', song.id);
-      await updateDoc(songRef, {
-        ratingCount: increment(1),
-        rating: song.rating ? (song.rating * song.ratingCount + rating) / (song.ratingCount + 1) : rating
-      });
+
+      if (ratingSnap.exists()) {
+        const oldRating = ratingSnap.data().rating;
+        if (oldRating === rating) return; // No change
+
+        await setDoc(ratingRef, {
+          userId: auth.currentUser.uid,
+          songId: song.id,
+          rating
+        });
+
+        // Update average: newSum = oldSum - oldVal + newVal
+        // oldSum = song.rating * song.ratingCount
+        const oldSum = (song.rating || 0) * (song.ratingCount || 1);
+        const newSum = oldSum - oldRating + rating;
+        const newAvg = newSum / (song.ratingCount || 1);
+
+        await updateDoc(songRef, {
+          rating: newAvg
+        });
+      } else {
+        await setDoc(ratingRef, {
+          userId: auth.currentUser.uid,
+          songId: song.id,
+          rating
+        });
+
+        const oldSum = (song.rating || 0) * (song.ratingCount || 0);
+        const newSum = oldSum + rating;
+        const newCount = (song.ratingCount || 0) + 1;
+        const newAvg = newSum / newCount;
+
+        await updateDoc(songRef, {
+          ratingCount: newCount,
+          rating: newAvg
+        });
+      }
 
       setUserRating(rating);
       toast.success('תודה על הדירוג!');
@@ -448,40 +478,73 @@ const UploadPage = ({ onBack, onUploadSuccess, userName }: { onBack: () => void;
     const reader = new FileReader();
     reader.onload = async (event) => {
       try {
-        const json = JSON.parse(event.target?.result as string);
+        const text = event.target?.result as string;
+        // Try to find the JSON part if there's text before/after
+        const start = text.indexOf('[');
+        const end = text.lastIndexOf(']');
+        let jsonStr = text;
+        if (start !== -1 && end !== -1 && start < end) {
+          jsonStr = text.substring(start, end + 1);
+        } else {
+          const objStart = text.indexOf('{');
+          const objEnd = text.lastIndexOf('}');
+          if (objStart !== -1 && objEnd !== -1 && objStart < objEnd) {
+            jsonStr = text.substring(objStart, objEnd + 1);
+          }
+        }
+
+        const json = JSON.parse(jsonStr);
         const songsToUpload = Array.isArray(json) ? json : (json.songs || [json]);
         
         setIsUploading(true);
-        for (const s of songsToUpload) {
-          // Handle both array and object versions
-          let versions: SongVersion[] = [];
-          if (Array.isArray(s.versions)) {
-            versions = s.versions;
-          } else if (typeof s.versions === 'object' && s.versions !== null) {
-            versions = Object.entries(s.versions).map(([name, content]) => ({
-              name,
-              content: content as string
-            }));
-          } else {
-            versions = [{ name: 'רגיל', content: s.content || '' }];
-          }
+        let successCount = 0;
+        let failCount = 0;
 
-          await addDoc(collection(db, 'songs'), {
-            title: s.title,
-            artist: s.artist,
-            uploaderId: auth.currentUser?.uid,
-            uploaderName: userName || auth.currentUser?.displayName || 'אנונימי',
-            createdAt: Timestamp.now(),
-            rating: 0,
-            ratingCount: 0,
-            versions: versions,
-            visible: true
-          });
+        for (const s of songsToUpload) {
+          try {
+            // Handle both array and object versions
+            let versions: SongVersion[] = [];
+            if (Array.isArray(s.versions)) {
+              versions = s.versions;
+            } else if (typeof s.versions === 'object' && s.versions !== null) {
+              versions = Object.entries(s.versions).map(([name, content]) => ({
+                name,
+                content: content as string
+              }));
+            } else {
+              versions = [{ name: 'רגיל', content: s.content || '' }];
+            }
+
+            await addDoc(collection(db, 'songs'), {
+              title: s.title || 'ללא כותרת',
+              artist: s.artist || 'אמן לא ידוע',
+              uploaderId: auth.currentUser?.uid,
+              uploaderName: userName || auth.currentUser?.displayName || 'אנונימי',
+              createdAt: Timestamp.now(),
+              rating: 0,
+              ratingCount: 0,
+              versions: versions,
+              visible: true,
+              tags: Array.isArray(s.tags) ? s.tags : [],
+              originalKey: s.originalKey || '',
+              scrollSpeed: typeof s.scrollSpeed === 'number' ? s.scrollSpeed : 3.0,
+              versionKeys: typeof s.versionKeys === 'object' ? s.versionKeys : {}
+            });
+            successCount++;
+          } catch (err) {
+            console.error('Failed to upload song:', s.title, err);
+            failCount++;
+          }
         }
-        toast.success('השירים הועלו בהצלחה!');
+        
+        if (failCount === 0) {
+          toast.success(`הועלו ${successCount} שירים בהצלחה!`);
+        } else {
+          toast.info(`הועלו ${successCount} שירים. ${failCount} נכשלו.`);
+        }
         onUploadSuccess();
       } catch (err) {
-        toast.error('קובץ JSON לא תקין');
+        toast.error('שגיאה בקריאת הקובץ או בפורמט ה-JSON');
         console.error(err);
       } finally {
         setIsUploading(false);
@@ -905,7 +968,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [songsMap, setSongsMap] = useState<Record<string, Song[]>>({});
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedSong, setSelectedSong] = useState<Song | null>(null);
+  const [selectedSongId, setSelectedSongId] = useState<string | null>(null);
   const [editingSong, setEditingSong] = useState<Song | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [view, setView] = useState<'home' | 'library' | 'upload' | 'admin' | 'chordbook' | 'edit' | 'contact' | 'messages'>('home');
@@ -913,12 +976,21 @@ export default function App() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [userName, setUserName] = useState<string>('');
   const [isAdminUser, setIsAdminUser] = useState(false);
+  const [selectedArtist, setSelectedArtist] = useState<string | null>(null);
+  const [isArtistFilterOpen, setIsArtistFilterOpen] = useState(false);
 
   const songs = useMemo(() => {
-    const allSongs = Object.values(songsMap).flat() as Song[];
-    const unique = Array.from(new Map(allSongs.map(s => [s.id, s])).values());
-    return unique.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+    const map = new Map<string, Song>();
+    if (songsMap.all) songsMap.all.forEach(s => map.set(s.id, s));
+    if (songsMap.public) songsMap.public.forEach(s => map.set(s.id, s));
+    if (songsMap.private) songsMap.private.forEach(s => map.set(s.id, s));
+    
+    return Array.from(map.values()).sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
   }, [songsMap]);
+
+  const selectedSong = useMemo(() => 
+    selectedSongId ? songs.find(s => s.id === selectedSongId) || null : null
+  , [songs, selectedSongId]);
 
   useEffect(() => {
     // Force light mode
@@ -962,22 +1034,31 @@ export default function App() {
     };
 
     if (isAdminUser) {
+      // Clear non-admin keys
+      setSongsMap(prev => {
+        const { public: p, private: pr, ...rest } = prev;
+        return rest;
+      });
       const q = query(collection(db, 'songs'), orderBy('createdAt', 'desc'), limit(100));
-      songListeners.push(onSnapshot(q, (snap) => handleSnap(snap, 'all'), (err) => handleFirestoreError(err, OperationType.LIST, 'songs')));
+      songListeners.push(onSnapshot(q, (snap) => handleSnap(snap, 'all'), (err) => {
+        console.error('Admin songs listener error:', err);
+      }));
     } else {
+      // Clear admin keys
+      setSongsMap(prev => {
+        const { all, ...rest } = prev;
+        return rest;
+      });
       const qPublic = query(collection(db, 'songs'), where('visible', '==', true), orderBy('createdAt', 'desc'), limit(100));
-      songListeners.push(onSnapshot(qPublic, (snap) => handleSnap(snap, 'public'), (err) => handleFirestoreError(err, OperationType.LIST, 'songs')));
+      songListeners.push(onSnapshot(qPublic, (snap) => handleSnap(snap, 'public'), (err) => {
+        console.error('Public songs listener error:', err);
+      }));
       
       if (user) {
         const qPrivate = query(collection(db, 'songs'), where('uploaderId', '==', user.uid), where('visible', '==', false));
-        songListeners.push(onSnapshot(qPrivate, (snap) => handleSnap(snap, 'private'), (err) => handleFirestoreError(err, OperationType.LIST, 'songs')));
-      } else {
-        // Clear private songs if logged out
-        setSongsMap(prev => {
-          const next = { ...prev };
-          delete next.private;
-          return next;
-        });
+        songListeners.push(onSnapshot(qPrivate, (snap) => handleSnap(snap, 'private'), (err) => {
+          console.error('Private songs listener error:', err);
+        }));
       }
     }
     
@@ -985,20 +1066,44 @@ export default function App() {
   }, [user, isAdminUser]);
 
   const filteredSongs = useMemo(() => {
-    return songs.filter(s => 
-      s.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      s.artist.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [songs, searchQuery]);
+    return songs.filter(s => {
+      const matchesSearch = s.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                           s.artist.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesArtist = !selectedArtist || s.artist === selectedArtist;
+      return matchesSearch && matchesArtist;
+    });
+  }, [songs, searchQuery, selectedArtist]);
+
+  const uniqueArtists = useMemo(() => {
+    const artists = new Set(songs.map(s => s.artist).filter(Boolean));
+    return Array.from(artists).sort();
+  }, [songs]);
 
   useEffect(() => {
-    if (!user) return;
-    const unsubscribe = onSnapshot(doc(db, 'users', user.uid), (doc) => {
-      if (doc.exists()) {
-        setUserName(doc.data().name || user.displayName || '');
-      }
-    });
-    return () => unsubscribe();
+    if (user) {
+      const userRef = doc(db, 'users', user.uid);
+      const unsubscribe = onSnapshot(userRef, (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          setUserName(data.name || user.displayName || '');
+          if (data.role === 'admin') {
+            setIsAdminUser(true);
+          } else if (user.email === 'markusef@gmail.com' && user.emailVerified) {
+            setIsAdminUser(true);
+          } else {
+            setIsAdminUser(false);
+          }
+        } else if (user.email === 'markusef@gmail.com' && user.emailVerified) {
+          setIsAdminUser(true);
+        } else {
+          setIsAdminUser(false);
+        }
+      });
+      return () => unsubscribe();
+    } else {
+      setIsAdminUser(false);
+      setUserName('');
+    }
   }, [user]);
 
   const handleLogin = async () => {
@@ -1050,31 +1155,12 @@ export default function App() {
     try {
       await updateDoc(doc(db, 'songs', id), { visible });
       toast.success(visible ? 'השיר גלוי כעת לכולם' : 'השיר הוסתר');
-      if (selectedSong?.id === id) {
-        setSelectedSong(prev => prev ? { ...prev, visible } : null);
-      }
     } catch (err) {
+      toast.error('שגיאה בעדכון נראות השיר');
       handleFirestoreError(err, OperationType.UPDATE, 'songs');
     }
   };
 
-  useEffect(() => {
-    if (user) {
-      const userRef = doc(db, 'users', user.uid);
-      const unsubscribe = onSnapshot(userRef, (snap) => {
-        if (snap.exists() && snap.data().role === 'admin') {
-          setIsAdminUser(true);
-        } else if (user.email === 'markusef@gmail.com' && user.emailVerified) {
-          setIsAdminUser(true); // Fallback for default admin
-        } else {
-          setIsAdminUser(false);
-        }
-      });
-      return () => unsubscribe();
-    } else {
-      setIsAdminUser(false);
-    }
-  }, [user]);
   const handleExport = () => {
     const exportData = {
       songs: songs.filter(s => selectedSongsForExport.includes(s.id))
@@ -1284,7 +1370,7 @@ export default function App() {
                   <motion.div 
                     key={song.id}
                     whileHover={{ y: -4 }}
-                    onClick={() => { setSelectedSong(song); setIsSidebarOpen(true); }}
+                    onClick={() => { setSelectedSongId(song.id); setIsSidebarOpen(true); }}
                     className="bg-zinc-50 border border-zinc-200 p-6 rounded-2xl cursor-pointer hover:bg-white hover:border-zinc-300 transition-all group"
                   >
                     <div className="flex justify-between items-start mb-4">
@@ -1377,7 +1463,7 @@ export default function App() {
 
         {view === 'library' && (
           <div className="max-w-7xl mx-auto px-6 py-12" dir="rtl">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-12">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
               <h1 className="text-4xl font-bold text-zinc-900">ספריית שירים</h1>
               <div className="flex items-center gap-4 w-full md:w-auto">
                 <div className="relative flex-1 md:w-80">
@@ -1402,6 +1488,67 @@ export default function App() {
               </div>
             </div>
 
+            {/* Artist Filter Bar */}
+            <div className="mb-8">
+              <button 
+                onClick={() => setIsArtistFilterOpen(!isArtistFilterOpen)}
+                className="w-full flex items-center justify-between p-4 bg-zinc-50 border border-zinc-200 rounded-2xl hover:bg-zinc-100 transition-all group"
+              >
+                <div className="flex items-center gap-3">
+                  <Filter className="w-5 h-5 text-blue-600" />
+                  <span className="font-bold text-zinc-900">
+                    {selectedArtist ? `מסונן לפי: ${selectedArtist}` : 'סנן לפי אמן'}
+                  </span>
+                  {selectedArtist && (
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedArtist(null);
+                      }}
+                      className="text-xs bg-zinc-200 text-zinc-600 px-2 py-0.5 rounded-full hover:bg-zinc-300"
+                    >
+                      נקה סינון
+                    </button>
+                  )}
+                </div>
+                {isArtistFilterOpen ? <ChevronUp className="w-5 h-5 text-zinc-400" /> : <ChevronDown className="w-5 h-5 text-zinc-400" />}
+              </button>
+
+              <AnimatePresence>
+                {isArtistFilterOpen && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="mt-2 p-6 bg-white/50 backdrop-blur-md border border-zinc-200 rounded-2xl shadow-xl">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                        {uniqueArtists.map(artist => (
+                          <button
+                            key={artist}
+                            onClick={() => {
+                              setSelectedArtist(artist);
+                              setIsArtistFilterOpen(false);
+                            }}
+                            className={cn(
+                              "text-right px-3 py-2 rounded-lg text-sm transition-all truncate",
+                              selectedArtist === artist 
+                                ? "bg-blue-600 text-white font-bold" 
+                                : "hover:bg-zinc-100 text-zinc-600"
+                            )}
+                            title={artist}
+                          >
+                            {artist}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
             <div className="bg-white rounded-3xl border border-zinc-200 overflow-hidden shadow-sm">
               <table className="w-full text-right">
                 <thead>
@@ -1411,7 +1558,7 @@ export default function App() {
                     <th className="px-6 py-4 font-bold text-zinc-500 text-sm">אמן</th>
                     <th className="px-6 py-4 font-bold text-zinc-500 text-sm">מעלה</th>
                     <th className="px-6 py-4 font-bold text-zinc-500 text-sm">דירוג</th>
-                    {isAdminUser && <th className="px-6 py-4 font-bold text-zinc-500 text-sm">פעולות</th>}
+                    <th className="px-6 py-4 font-bold text-zinc-500 text-sm">פעולות</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-200">
@@ -1419,7 +1566,7 @@ export default function App() {
                     <tr 
                       key={song.id} 
                       className="hover:bg-zinc-50 transition-colors cursor-pointer group"
-                      onClick={() => { setSelectedSong(song); setIsSidebarOpen(true); }}
+                      onClick={() => { setSelectedSongId(song.id); setIsSidebarOpen(true); }}
                     >
                       <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
                         <input 
@@ -1448,16 +1595,31 @@ export default function App() {
                           <span className="font-bold">{song.rating?.toFixed(1) || '0.0'}</span>
                         </div>
                       </td>
-                      {isAdminUser && (
-                        <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
-                          <button 
-                            onClick={() => handleDeleteSong(song.id)}
-                            className="p-2 hover:bg-red-500/10 text-red-500 rounded-lg transition-colors"
-                          >
-                            <Trash2 className="w-5 h-5" />
-                          </button>
-                        </td>
-                      )}
+                      <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-2">
+                          {(isAdminUser || (user && song.uploaderId === user.uid)) && (
+                            <button 
+                              onClick={() => handleToggleVisibility(song.id, !song.visible)}
+                              className={cn(
+                                "p-2 rounded-lg transition-colors",
+                                song.visible ? "text-zinc-400 hover:bg-zinc-100" : "text-orange-500 hover:bg-orange-50"
+                              )}
+                              title={song.visible ? 'הסתר שיר' : 'הצג שיר'}
+                            >
+                              {song.visible ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
+                            </button>
+                          )}
+                          {isAdminUser && (
+                            <button 
+                              onClick={() => handleDeleteSong(song.id)}
+                              className="p-2 hover:bg-red-500/10 text-red-500 rounded-lg transition-colors"
+                              title="מחק שיר"
+                            >
+                              <Trash2 className="w-5 h-5" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

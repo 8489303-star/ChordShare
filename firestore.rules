@@ -18,6 +18,7 @@ service cloud.firestore {
     }
     function isBlocked() {
       return isAuthenticated() && 
+        !isAdmin() &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isBlocked == true;
     }
@@ -26,24 +27,27 @@ service cloud.firestore {
     // Domain Validators
     // ===============================================================
     function isValidSong(data) {
-      return data.title is string && data.title.size() > 0 && data.title.size() < 100 &&
-             data.artist is string && data.artist.size() > 0 && data.artist.size() < 100 &&
-             data.uploaderId is string && data.uploaderName is string &&
-             data.versions is list && data.versions.size() > 0 && data.versions.size() < 10 &&
-             (!('visible' in data) || data.visible is bool);
+      return data.title is string && data.title.size() > 0 &&
+             data.artist is string &&
+             data.uploaderId is string &&
+             data.versions is list && data.versions.size() > 0;
     }
 
     function isValidRating(data) {
       return data.userId == request.auth.uid &&
              data.songId is string &&
-             data.rating is number && data.rating >= 1 && data.rating <= 5;
+             data.rating is number;
     }
 
     function isValidUser(data) {
       return data.name is string && data.name.size() > 0 &&
-             data.email is string && data.email.size() > 0 &&
-             data.role in ['admin', 'user'] &&
-             (!('isBlocked' in data) || data.isBlocked is bool);
+             data.email is string && data.email.size() > 0;
+    }
+
+    function isValidSongUpdate(data, prevData) {
+      return isAdmin() || 
+             data.diff(prevData).affectedKeys().hasOnly(['rating', 'ratingCount']) ||
+             (isOwner(prevData.uploaderId) && isValidSong(data));
     }
 
     // ===============================================================
@@ -52,7 +56,7 @@ service cloud.firestore {
     match /songs/{songId} {
       allow read: if resource.data.visible == true || isAdmin() || isOwner(resource.data.uploaderId);
       allow create: if isAuthenticated() && !isBlocked() && isValidSong(request.resource.data) && request.resource.data.uploaderId == request.auth.uid;
-      allow update: if isAuthenticated() && !isBlocked() && (isAdmin() || (isOwner(resource.data.uploaderId) && isValidSong(request.resource.data)));
+      allow update: if isAuthenticated() && !isBlocked() && isValidSongUpdate(request.resource.data, resource.data);
       allow delete: if isAdmin() || isOwner(resource.data.uploaderId);
     }
 
