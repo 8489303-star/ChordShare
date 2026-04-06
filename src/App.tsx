@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { auth, db, googleProvider, OperationType, handleFirestoreError } from './firebase';
 import { signInWithPopup, signOut, onAuthStateChanged, User, updateProfile } from 'firebase/auth';
 import { collection, query, orderBy, limit, onSnapshot, addDoc, Timestamp, where, getDocs, doc, updateDoc, increment, setDoc, getDoc, deleteDoc, writeBatch } from 'firebase/firestore';
@@ -33,23 +33,27 @@ import {
   Mail,
   Send,
   CheckCircle,
-  Edit
+  Edit,
+  Play,
+  Pause,
+  Minus,
+  Type
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Toaster, toast } from 'sonner';
 
 // --- Components ---
 
-const ChordProRenderer = ({ content }: { content: string }) => {
+const ChordProRenderer = ({ content, fontSize = 14 }: { content: string; fontSize?: number }) => {
   const lines = useMemo(() => parseChordPro(content), [content]);
 
   return (
-    <div className="font-mono text-sm leading-relaxed whitespace-pre overflow-x-auto text-right" dir="rtl">
+    <div className="font-mono leading-relaxed whitespace-pre overflow-x-auto text-right" dir="rtl" style={{ fontSize: `${fontSize}px` }}>
       {lines.map((line, i) => (
         <div key={i} className="flex flex-wrap mb-4 min-h-[2.5rem]">
           {line.chunks.map((chunk, j) => (
             <div key={j} className="flex flex-col items-start mx-0.5">
-              <span className="text-blue-600 font-bold h-5 text-xs select-none">
+              <span className="text-blue-600 font-bold h-5 select-none" style={{ fontSize: `${fontSize * 0.85}px` }}>
                 {chunk.chord || ''}
               </span>
               <span className="text-zinc-900">
@@ -243,6 +247,58 @@ const UserManagement = ({ onBack }: { onBack: () => void }) => {
 const SongViewer = ({ song, isOpen, onClose, isAdminUser, onDelete, onAppClick, onToggleVisibility, onEdit }: { song: Song | null; isOpen: boolean; onClose: () => void; isAdminUser: boolean; onDelete: (id: string) => void; onAppClick: () => void; onToggleVisibility: (id: string, visible: boolean) => void; onEdit: (song: Song) => void }) => {
   const [activeVersionIndex, setActiveVersionIndex] = useState(0);
   const [userRating, setUserRating] = useState<number | null>(null);
+  const [isScrolling, setIsScrolling] = useState(false);
+  const [scrollSpeed, setScrollSpeed] = useState(song?.scrollSpeed || 3);
+  const [fontSize, setFontSize] = useState(16);
+  const [showFloatingControls, setShowFloatingControls] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollPosRef = useRef(0);
+
+  useEffect(() => {
+    let animationFrameId: number;
+    const scroll = () => {
+      if (isScrolling && scrollRef.current) {
+        // Refined speed logic: 
+        // We use a smaller multiplier to make the difference between 3.0 and 3.5 less drastic
+        // but ensure it actually moves by using a fractional accumulator
+        // 3.0 -> 0.15px/frame (~9px/sec)
+        // 3.5 -> 0.175px/frame (~10.5px/sec)
+        scrollPosRef.current += (scrollSpeed * 0.05); 
+        scrollRef.current.scrollTop = scrollPosRef.current;
+      } else if (scrollRef.current) {
+        scrollPosRef.current = scrollRef.current.scrollTop;
+      }
+      animationFrameId = requestAnimationFrame(scroll);
+    };
+    animationFrameId = requestAnimationFrame(scroll);
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [isScrolling, scrollSpeed]);
+
+  const handleScroll = () => {
+    if (scrollRef.current) {
+      const scrollTop = scrollRef.current.scrollTop;
+      // Show controls when scrolled down a bit (e.g., half of the container height)
+      const threshold = scrollRef.current.clientHeight / 2;
+      setShowFloatingControls(scrollTop > threshold);
+      if (!isScrolling) {
+        scrollPosRef.current = scrollTop;
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!isOpen) {
+      setShowFloatingControls(false);
+      setIsScrolling(false);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (song) {
+      setScrollSpeed(song.scrollSpeed || 3);
+      setIsScrolling(false);
+    }
+  }, [song]);
 
   useEffect(() => {
     if (song && auth.currentUser) {
@@ -345,7 +401,68 @@ const SongViewer = ({ song, isOpen, onClose, isAdminUser, onDelete, onAppClick, 
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
             className="fixed top-0 left-0 h-full w-full max-w-2xl bg-white shadow-2xl z-50 overflow-y-auto border-r border-zinc-200"
             dir="rtl"
+            ref={scrollRef}
+            onScroll={handleScroll}
           >
+            {/* Floating Controls */}
+            <AnimatePresence>
+              {showFloatingControls && (
+                <motion.div 
+                  initial={{ opacity: 0, y: -20, x: '-50%' }}
+                  animate={{ opacity: 1, y: 0, x: '-50%' }}
+                  exit={{ opacity: 0, y: -20, x: '-50%' }}
+                  className="sticky top-4 left-1/2 z-[60] flex items-center gap-2 bg-white/90 backdrop-blur-md border border-zinc-200 p-2 rounded-2xl shadow-xl"
+                >
+                  <div className="flex items-center gap-1 border-l border-zinc-200 pl-2">
+                    <button 
+                      onClick={() => setIsScrolling(!isScrolling)}
+                      className={cn(
+                        "p-2 rounded-xl transition-all",
+                        isScrolling ? "bg-red-100 text-red-600" : "bg-blue-100 text-blue-600"
+                      )}
+                    >
+                      {isScrolling ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                    </button>
+                    <div className="flex items-center gap-1 bg-zinc-100 p-1 rounded-xl">
+                      <button 
+                        onClick={() => setScrollSpeed(prev => Math.max(0.1, prev - 0.1))}
+                        className="p-1 hover:bg-white rounded-lg transition-colors"
+                      >
+                        <Minus className="w-4 h-4 text-zinc-500" />
+                      </button>
+                      <span className="text-xs font-bold text-zinc-900 w-8 text-center">{scrollSpeed.toFixed(1)}</span>
+                      <button 
+                        onClick={() => setScrollSpeed(prev => Math.min(20, prev + 0.1))}
+                        className="p-1 hover:bg-white rounded-lg transition-colors"
+                      >
+                        <Plus className="w-4 h-4 text-zinc-500" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 bg-zinc-100 p-1 rounded-xl">
+                      <button 
+                        onClick={() => setFontSize(prev => Math.max(10, prev - 2))}
+                        className="p-1 hover:bg-white rounded-lg transition-colors"
+                      >
+                        <Minus className="w-4 h-4 text-zinc-500" />
+                      </button>
+                      <div className="flex items-center gap-1 px-1">
+                        <Type className="w-3.5 h-3.5 text-zinc-400" />
+                        <span className="text-xs font-bold text-zinc-900">{fontSize}</span>
+                      </div>
+                      <button 
+                        onClick={() => setFontSize(prev => Math.min(40, prev + 2))}
+                        className="p-1 hover:bg-white rounded-lg transition-colors"
+                      >
+                        <Plus className="w-4 h-4 text-zinc-500" />
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             <div className="p-6">
               <div className="flex justify-between items-start mb-8">
                 <div className="flex gap-2">
@@ -453,7 +570,7 @@ const SongViewer = ({ song, isOpen, onClose, isAdminUser, onDelete, onAppClick, 
               </div>
 
               <div className="bg-zinc-50 rounded-xl p-6 border border-zinc-200 shadow-inner">
-                <ChordProRenderer content={song.versions[activeVersionIndex].content} />
+                <ChordProRenderer content={song.versions[activeVersionIndex].content} fontSize={fontSize} />
               </div>
             </div>
           </motion.div>
