@@ -44,8 +44,8 @@ import { Toaster, toast } from 'sonner';
 
 // --- Components ---
 
-const ChordProRenderer = ({ content, fontSize = 14 }: { content: string; fontSize?: number }) => {
-  const lines = useMemo(() => parseChordPro(content), [content]);
+const ChordProRenderer = ({ content, fontSize = 14, transpose = 0 }: { content: string; fontSize?: number; transpose?: number }) => {
+  const lines = useMemo(() => parseChordPro(content, transpose), [content, transpose]);
 
   return (
     <div className="font-mono leading-relaxed whitespace-pre overflow-x-auto text-right" dir="rtl" style={{ fontSize: `${fontSize}px` }}>
@@ -250,6 +250,7 @@ const SongViewer = ({ song, isOpen, onClose, isAdminUser, onDelete, onAppClick, 
   const [isScrolling, setIsScrolling] = useState(false);
   const [scrollSpeed, setScrollSpeed] = useState(song?.scrollSpeed || 3);
   const [fontSize, setFontSize] = useState(16);
+  const [transpose, setTranspose] = useState(0);
   const [showFloatingControls, setShowFloatingControls] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollPosRef = useRef(0);
@@ -297,6 +298,7 @@ const SongViewer = ({ song, isOpen, onClose, isAdminUser, onDelete, onAppClick, 
     if (song) {
       setScrollSpeed(song.scrollSpeed || 3);
       setIsScrolling(false);
+      setTranspose(0);
     }
   }, [song]);
 
@@ -408,10 +410,10 @@ const SongViewer = ({ song, isOpen, onClose, isAdminUser, onDelete, onAppClick, 
             <AnimatePresence>
               {showFloatingControls && (
                 <motion.div 
-                  initial={{ opacity: 0, y: -20, x: '-50%' }}
-                  animate={{ opacity: 1, y: 0, x: '-50%' }}
-                  exit={{ opacity: 0, y: -20, x: '-50%' }}
-                  className="sticky top-4 left-1/2 z-[60] flex items-center gap-2 bg-white/90 backdrop-blur-md border border-zinc-200 p-2 rounded-2xl shadow-xl"
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="sticky top-4 mx-auto z-[60] flex items-center gap-2 bg-white/90 backdrop-blur-md border border-zinc-200 p-2 rounded-2xl shadow-xl w-fit"
                 >
                   <div className="flex items-center gap-1 border-l border-zinc-200 pl-2">
                     <button 
@@ -433,6 +435,28 @@ const SongViewer = ({ song, isOpen, onClose, isAdminUser, onDelete, onAppClick, 
                       <span className="text-xs font-bold text-zinc-900 w-8 text-center">{scrollSpeed.toFixed(1)}</span>
                       <button 
                         onClick={() => setScrollSpeed(prev => Math.min(20, prev + 0.1))}
+                        className="p-1 hover:bg-white rounded-lg transition-colors"
+                      >
+                        <Plus className="w-4 h-4 text-zinc-500" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 border-l border-zinc-200 pl-2">
+                    <div className="flex items-center gap-1 bg-zinc-100 p-1 rounded-xl">
+                      <button 
+                        onClick={() => setTranspose(prev => prev - 1)}
+                        className="p-1 hover:bg-white rounded-lg transition-colors"
+                      >
+                        <Minus className="w-4 h-4 text-zinc-500" />
+                      </button>
+                      <div className="flex flex-col items-center px-1 min-w-[40px]">
+                        <Music className="w-3 h-3 text-zinc-400" />
+                        <span className="text-[10px] font-black text-zinc-900">
+                          {transpose > 0 ? `+${transpose}` : transpose}
+                        </span>
+                      </div>
+                      <button 
+                        onClick={() => setTranspose(prev => prev + 1)}
                         className="p-1 hover:bg-white rounded-lg transition-colors"
                       >
                         <Plus className="w-4 h-4 text-zinc-500" />
@@ -570,7 +594,7 @@ const SongViewer = ({ song, isOpen, onClose, isAdminUser, onDelete, onAppClick, 
               </div>
 
               <div className="bg-zinc-50 rounded-xl p-6 border border-zinc-200 shadow-inner">
-                <ChordProRenderer content={song.versions[activeVersionIndex].content} fontSize={fontSize} />
+                <ChordProRenderer content={song.versions[activeVersionIndex].content} fontSize={fontSize} transpose={transpose} />
               </div>
             </div>
           </motion.div>
