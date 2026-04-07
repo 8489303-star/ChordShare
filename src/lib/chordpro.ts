@@ -41,13 +41,17 @@ export function parseChordPro(content: string, transpose: number = 0): ChordLine
 
     while (i < line.length) {
       if (line[i] === '[') {
+        // Push previous chunk if exists
+        if (currentText || currentChord !== null) {
+          chunks.push({ chord: currentChord, text: currentText });
+          currentText = '';
+        }
+        
         const start = i + 1;
         const end = line.indexOf(']', start);
         if (end !== -1) {
           const rawChord = line.substring(start, end);
-          const transposed = transpose !== 0 ? transposeChord(rawChord, transpose) : rawChord;
-          chunks.push({ chord: transposed, text: currentText });
-          currentText = '';
+          currentChord = transpose !== 0 ? transposeChord(rawChord, transpose) : rawChord;
           i = end + 1;
         } else {
           currentText += line[i];

@@ -48,12 +48,16 @@ const ChordProRenderer = ({ content, fontSize = 14, transpose = 0 }: { content: 
   const lines = useMemo(() => parseChordPro(content, transpose), [content, transpose]);
 
   return (
-    <div className="font-mono leading-relaxed whitespace-pre overflow-x-auto text-right" dir="rtl" style={{ fontSize: `${fontSize}px` }}>
+    <div className="font-mono leading-relaxed whitespace-pre text-right" dir="rtl" style={{ fontSize: `${fontSize}px` }}>
       {lines.map((line, i) => (
         <div key={i} className="flex flex-wrap mb-4 min-h-[2.5rem]">
           {line.chunks.map((chunk, j) => (
-            <div key={j} className="flex flex-col items-start mx-0.5">
-              <span className="text-blue-600 font-bold h-5 select-none" style={{ fontSize: `${fontSize * 0.85}px` }}>
+            <div key={j} className="flex flex-col items-start">
+              <span 
+                className="text-blue-600 font-bold h-5 select-none" 
+                dir="ltr"
+                style={{ fontSize: `${fontSize * 0.85}px` }}
+              >
                 {chunk.chord || ''}
               </span>
               <span className="text-zinc-900">
@@ -278,8 +282,8 @@ const SongViewer = ({ song, isOpen, onClose, isAdminUser, onDelete, onAppClick, 
   const handleScroll = () => {
     if (scrollRef.current) {
       const scrollTop = scrollRef.current.scrollTop;
-      // Show controls when scrolled down a bit (e.g., half of the container height)
-      const threshold = scrollRef.current.clientHeight / 2;
+      // Show controls when scrolled down a bit (e.g., when reaching the rating/header area)
+      const threshold = 100;
       setShowFloatingControls(scrollTop > threshold);
       if (!isScrolling) {
         scrollPosRef.current = scrollTop;
